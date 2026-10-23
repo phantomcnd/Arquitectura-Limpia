@@ -1,0 +1,4 @@
+{
+    "persistencia": "sqlite",
+    "carpeta_datos": "data"
+}

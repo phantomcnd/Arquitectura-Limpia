@@ -1,0 +1,218 @@
+\documentclass[10.5pt]{article}
+\usepackage[a4paper,margin=2cm]{geometry}
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+\usepackage[spanish,es-noshorthands]{babel}
+\usepackage{times}
+\usepackage{titlesec}
+\usepackage{enumitem}
+\usepackage{array}
+\usepackage{booktabs}
+\usepackage{graphicx}
+\usepackage{parskip}
+\usepackage{tikz}
+\usepackage{hyperref}
+\hypersetup{colorlinks=true,linkcolor=black,urlcolor=black,citecolor=black}
+\setlength{\parskip}{3pt}
+\titlespacing*{\section}{0pt}{8pt}{3pt}
+\titlespacing*{\subsection}{0pt}{5pt}{2pt}
+\titleformat{\section}{\normalfont\bfseries\large}{\thesection.}{0.4em}{}
+\titleformat{\subsection}{\normalfont\bfseries}{\thesubsection.}{0.4em}{}
+\setlist{itemsep=1pt,topsep=2pt,parsep=0pt}
+\title{Trabajo (Arquitectura Limpia)}
+\author{Christopher Alexis Candelejo Fasso}
+\date{23 de octubre de 2026}
+\begin{document}
+
+% ---------------- Carátula ----------------
+\begin{titlepage}
+\centering
+\vspace*{1cm}
+{\large \textbf{UNIVERSIDAD DE LAS FUERZAS ARMADAS ESPE}}\\
+{\large \textbf{SEDE LATACUNGA}}\\[1.5cm]
+{\large \textbf{ARQUITECTURA DE SOFTWARE}}\\
+{\large \textbf{NRC: 37761}}\\[3cm]
+% El logo se muestra solo si el archivo espe_logo.png esta junto a este documento.
+\IfFileExists{espe_logo.png}{%
+\begin{figure}[h]
+    \centering
+    \includegraphics[width=0.30\linewidth]{espe_logo.png}
+\end{figure}}{}
+{\Large \textbf{Trabajo (Arquitectura Limpia)}}\\
+{\normalsize \textbf{Estudiante:} Christopher Alexis Candelejo Fasso}\\[2.5cm]
+{\normalsize \textbf{Fecha:} 23 de octubre de 2026}
+\vfill
+\end{titlepage}
+
+% ---------------- Contenido ----------------
+\section{Introducción}
+El punto de partida es un sistema de facturación sencillo que funciona por consola. El objetivo
+de este trabajo no es solo agregarle funciones, sino comprobar algo más importante: que si el
+sistema está bien organizado, se pueden cambiar las piezas de afuera (cómo llegan las facturas o
+dónde se guardan) sin dañar las reglas del negocio.
+
+Para comprobarlo se construyó un sistema de facturación en PHP con Arquitectura Limpia. El
+sistema recibe facturas de dos formas distintas (una API REST y un broker de mensajes), revisa
+reglas de fraude e impuestos, y guarda el resultado en una base de datos que se elige por
+configuración. La persistencia es real: usa SQLite, una base embebida que el enunciado permite
+en lugar de PostgreSQL u Oracle (que se representan con adaptadores simulados sobre SQLite). La
+API REST es un servidor HTTP funcional y el broker es una cola simulada, con un productor que
+publica y un consumidor que procesa después. Lo que importa es poder reemplazar cada pieza, no
+conectarse físicamente a PostgreSQL, Oracle o RabbitMQ.
+
+\section{La idea de la Arquitectura Limpia}
+En un sistema de facturación hay dos tipos de cosas. Por un lado está el \textbf{negocio}: qué
+es una factura, cuándo se rechaza y cuánto IVA lleva. Esto cambia poco. Por otro lado está la
+\textbf{tecnología}: la base de datos, la web, las colas de mensajes. Esto cambia seguido. Si
+ambas están mezcladas, cada cambio de tecnología obliga a tocar el negocio y se corre el riesgo
+de dañarlo.
+
+La Arquitectura Limpia las separa en capas y pone una sola regla: \textbf{las capas de adentro
+no conocen a las de afuera}. Por ejemplo, la factura no sabe si se guardará en PostgreSQL u
+Oracle, ni si llegó por la web o por un mensaje. Quien se adapta es lo de afuera, nunca el
+negocio.
+
+\section{Cómo está organizado el sistema}
+El código se divide en tres capas. Las flechas de la figura muestran quién usa a quién: siempre
+apuntan hacia el centro.
+
+\begin{figure}[h]
+\centering
+\begin{tikzpicture}[font=\footnotesize,
+  caja/.style={draw, rounded corners, fill=white, align=center, minimum height=0.8cm,
+               text width=2.7cm, inner sep=3pt},
+  flecha/.style={->, thick}]
+% Capas
+\draw[fill=blue!8] (0,0) rectangle (14.6,9);
+\node[anchor=north west] at (0.2,8.9) {\textbf{Infraestructura}};
+\draw[fill=green!10] (3.4,0.6) rectangle (11.1,8);
+\node[anchor=north west] at (3.6,7.9) {\textbf{Aplicación}};
+\draw[fill=yellow!20] (3.9,1.0) rectangle (10.6,5.5);
+\node[anchor=south west] at (4.0,1.1) {\textbf{Dominio}};
+% Nodos
+\node[caja] (rest) at (1.6,6.0) {API REST\\(AdaptadorRest)};
+\node[caja] (broker) at (1.6,3.0) {Broker\\(AdaptadorBroker)};
+\node[caja] (crear) at (7.2,6.7) {Caso de uso\\CrearFactura};
+\node[caja] (factura) at (5.6,3.4) {Factura\\(fraude + IVA)};
+\node[caja] (iface) at (8.9,3.4) {FacturaRepositorio\\(contrato)};
+\node[caja] (sq) at (13.0,7.2) {RepoSqlite\\(SQLite real)};
+\node[caja] (mem) at (13.0,5.4) {RepoMemoria\\(volátil)};
+\node[caja] (pg) at (13.0,3.6) {RepoPostgres y RepoOracle\\(simulados)};
+% Flechas
+\draw[flecha] (rest.east) -- ++(0.6,0) |- (crear.west);
+\draw[flecha] (broker.east) -- ++(0.6,0) |- (crear.west);
+\draw[flecha] (crear.south west) -- (factura.north);
+\draw[flecha] (crear.south east) -- (iface.north);
+\draw[flecha, dashed] (sq.west) -- ++(-0.6,0) |- (iface.east);
+\draw[flecha, dashed] (mem.west) -- ++(-0.6,0) |- (iface.east);
+\draw[flecha, dashed] (pg.west) -- ++(-0.6,0) |- (iface.east);
+\end{tikzpicture}
+\caption{Diagrama de la Arquitectura Limpia del sistema. Las flechas continuas significan
+``usa a''; las punteadas significan ``cumple el contrato de''.}
+\end{figure}
+
+\begin{description}[leftmargin=0pt]
+\item[Dominio (el centro).] Tiene la factura con sus reglas de fraude e impuestos, los
+parámetros de esas reglas (\texttt{Reglas}) y el contrato \texttt{FacturaRepositorio}, que
+describe qué necesita el negocio para guardar y listar facturas. No depende de nada externo.
+\item[Aplicación.] Tiene el caso de uso \texttt{CrearFactura}, que coordina los pasos: crear la
+factura y guardarla (y \texttt{ListarFacturas}, para consultarlas). No sabe quién lo llama ni
+dónde se guarda el resultado.
+\item[Infraestructura (lo de afuera).] Tiene las piezas que se pueden cambiar: las dos formas de
+recibir facturas (REST y broker), las formas de guardarlas (SQLite, memoria y los adaptadores
+de PostgreSQL y Oracle) y la lectura de la configuración (\texttt{main.php} y la carpeta
+\texttt{config}).
+\end{description}
+
+\section{Cómo se resolvió cada punto del enunciado}
+
+\subsection{Recibir facturas por dos vías distintas}
+La API REST y el broker son diferentes por fuera, pero hacen lo mismo por dentro: reciben un
+texto en formato JSON, lo convierten en una lista de datos y llaman al mismo método,
+\texttt{CrearFactura::ejecutar}. No tienen reglas de negocio. La diferencia es el momento: la API
+REST (\texttt{api.php}) responde en la misma petición, mientras que el productor deja el mensaje
+en la cola y termina, y el consumidor lo procesa después. Gracias a esto la lógica de crear
+facturas existe una sola vez, y el caso de uso no sabe si los datos llegaron por la web o por un
+mensaje. Ese método es el punto de entrada a la capa de aplicación.
+
+\subsection{Proteger las reglas del negocio}
+La lógica de las reglas vive solo en la clase \texttt{Factura}. Sus valores (límite, lista de
+bloqueados, IVA) están en el archivo \texttt{config/reglas.json}, así que se ajustan sin
+modificar código. Son reglas simuladas, pero cumplen su papel:
+\begin{itemize}
+\item \textbf{Control de fraude:} se rechaza una factura si el monto supera el límite configurado (10\,000), si el
+monto no es positivo o si el cliente está en la lista de bloqueados.
+\item \textbf{Política fiscal:} el IVA configurado es del 15\,\%, y de 0\,\% para clientes exentos.
+\end{itemize}
+Estas reglas se revisan al crear la factura. Si no se cumplen, la factura simplemente no se
+crea. Por eso el negocio queda protegido sin importar quién lo use: ni la base de datos ni la web
+pueden saltárselas, porque no las conocen.
+
+\subsection{Guardar en cualquier base de datos}
+El dominio define un contrato, \texttt{FacturaRepositorio}, con dos operaciones: guardar y
+listar facturas. \texttt{RepoSqlite} lo cumple con una base SQLite real; \texttt{RepoMemoria}, con
+un arreglo volátil; y \texttt{RepoPostgres} y \texttt{RepoOracle} son adaptadores simulados que,
+como permite el enunciado, usan SQLite por debajo. El valor \texttt{persistencia} del archivo
+\texttt{config/config.json} decide cuál usar. Cada una numera sus facturas de forma distinta
+(\texttt{FAC-1}, \texttt{MEM-1}, \texttt{PG-1}, \texttt{ORA-1}), lo que permite ver cuál se está
+usando. El contrato pertenece al dominio, así
+que es la base de datos la que se adapta al negocio y no al revés.
+
+\section{Cómo se demuestra que se puede cambiar sin tocar el núcleo}
+El objetivo final del trabajo es poder cambiar el broker, la base de datos o la interfaz web sin
+modificar una sola línea de las capas de dominio y aplicación. Para comprobarlo se calcula la
+huella (MD5) de los archivos de esas dos capas antes y después de cada cambio. Si la huella es
+igual, el archivo no cambió ni un carácter.
+
+\begin{table}[h]
+\centering
+\begin{tabular}{p{3cm}p{8cm}p{4.5cm}}
+\toprule
+\textbf{Cambio} & \textbf{Qué se modificó} & \textbf{Dominio y aplicación} \\
+\midrule
+Base de datos &
+Un valor en \texttt{config/config.json}: de \texttt{"sqlite"} a \texttt{"oracle"}. La factura
+pasó de \texttt{FAC-1} a \texttt{ORA-1} con el mismo total (1150). &
+Huellas idénticas. \\
+\addlinespace
+Broker &
+Se agrega un adaptador nuevo (por ejemplo para Kafka) en infraestructura, que llama a
+\texttt{CrearFactura::ejecutar} igual que \texttt{AdaptadorBroker}. &
+Huellas idénticas. \\
+\addlinespace
+Interfaz web &
+Se hace igual: un adaptador nuevo en infraestructura, como el de REST. &
+No hay nada que cambiar en ellas. \\
+\bottomrule
+\end{tabular}
+\caption{Resultado de cada cambio.}
+\end{table}
+
+Además, el archivo \texttt{prueba.php} ejecuta 15 verificaciones y todas resultan correctas:
+las reglas de IVA y fraude funcionan sin una base de datos real; cambiar los valores de
+\texttt{reglas.json} cambia el resultado sin tocar código; la misma factura enviada por REST y
+por broker da el mismo total y queda en la misma base; los datos persisten en SQLite; el
+resultado de negocio es el mismo con las cuatro persistencias; y los archivos de dominio y
+aplicación no mencionan PDO, SQL, JSON, HTTP ni colas.
+
+\section{Ventajas reales de esta arquitectura}
+\begin{itemize}
+\item \textbf{Cambiar de tecnología es barato.} Cambiar de base de datos o de broker se reduce a
+escribir una pieza nueva o cambiar un valor, sin tocar el negocio.
+\item \textbf{Las reglas están en un solo lugar.} Si cambia el IVA o el límite de fraude, se
+edita \texttt{reglas.json} y todas las entradas lo reflejan.
+\item \textbf{Se prueba más fácil.} El negocio se puede probar sin base de datos, sin servidor
+web y sin broker.
+\item \textbf{No se repite código.} Agregar una nueva forma de recibir facturas no obliga a
+copiar la lógica de facturación.
+\item \textbf{Menos riesgo.} Un problema en la tecnología externa no puede dañar las reglas del
+negocio.
+\end{itemize}
+
+\section{Conclusión}
+La separación en capas permite cambiar la base de datos, el broker o la interfaz web sin
+modificar el dominio ni la aplicación, y esto se comprobó con las huellas de los archivos. El
+precio es un poco más de estructura al comenzar (un contrato y varios adaptadores), pero ese
+esfuerzo se recupera cada vez que el sistema necesita cambiar.
+
+\end{document}

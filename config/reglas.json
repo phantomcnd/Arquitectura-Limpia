@@ -1,0 +1,9 @@
+{
+    "fraude": {
+        "monto_maximo": 10000,
+        "clientes_bloqueados": ["Cliente Fraudulento", "Juan Estafador"]
+    },
+    "fiscal": {
+        "iva": 0.15
+    }
+}
